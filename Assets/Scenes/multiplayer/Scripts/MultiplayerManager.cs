@@ -1,6 +1,8 @@
 using UnityEngine;
 using NativeWebSocket;
 using System.Text;
+using System.Collections.Generic;
+using TMPro;
 
 public class MultiplayerManager : MonoBehaviour
 {
@@ -9,6 +11,11 @@ public class MultiplayerManager : MonoBehaviour
     public GameObject playerPrefab;
     public GameObject towerGameObject;
     GameObject player;
+    public GameObject joinCanvas;
+
+    public enemyObjectPool enemyObjectPool;
+
+    public Dictionary<string, WayPathMultiplayer> tiles = new Dictionary<string, WayPathMultiplayer>();
 
     async private void Start()
     {
@@ -33,11 +40,25 @@ public class MultiplayerManager : MonoBehaviour
         webSocket.OnMessage += (bytes) =>
         {
             string json = Encoding.UTF8.GetString(bytes);
-            TowerDetails td = JsonUtility.FromJson<TowerDetails>(json);
 
-            if (td != null && td.type == "tower")
+            if (json.Contains("\"type\":\"enemy\""))
             {
+                enemyObjectPool.StartEnemies();
+                joinCanvas.SetActive(false);
+            }
+
+            if (json.Contains("\"type\":\"tower\""))
+            {
+                TowerDetails td = JsonUtility.FromJson<TowerDetails>(json);
                 Instantiate(towerGameObject, new Vector3(td.x, td.y, td.z), Quaternion.identity);
+            }
+
+            if (json.Contains("\"type\":\"tile\""))
+            {
+                TileDetails tile = JsonUtility.FromJson<TileDetails>(json);
+
+                if (tiles.TryGetValue(tile.id, out var w))
+                    w.IsPlaceable = tile.isPlaced;
             }
         };
 
@@ -56,6 +77,32 @@ public class MultiplayerManager : MonoBehaviour
         };
 
         string json = JsonUtility.ToJson(td);
+        webSocket.SendText(json);
+    }
+
+    public void SendTileDetails(string id, bool isPlaced)
+    {
+        TileDetails tile = new TileDetails
+        {
+            type = "tile",
+            id = id,
+            isPlaced = isPlaced
+        };
+        string json = JsonUtility.ToJson(tile);
+        webSocket.SendText(json);
+    }
+
+    public void SendStartStatus()
+    {
+        enemyObjectPool.StartEnemies();
+        joinCanvas.SetActive(false);
+
+        EnemyPoolStats enemyPool = new EnemyPoolStats
+        {
+            type = "enemy",
+        };
+
+        string json = JsonUtility.ToJson(enemyPool);
         webSocket.SendText(json);
     }
 
@@ -102,5 +149,23 @@ public class MultiplayerManager : MonoBehaviour
         public float x;
         public float y;
         public float z;
+    }
+
+    public class TileDetails
+    {
+        public string type;
+        public string id;
+        public bool isPlaced;
+    }
+
+    public class PlayerStats
+    {
+        public string type;
+        public string name;
+    }
+
+    public class EnemyPoolStats
+    {
+        public string type;
     }
 }

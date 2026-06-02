@@ -7,19 +7,19 @@ public class enemyObjectPool : MonoBehaviour
 {
 
     [SerializeField] GameObject enemyPool;
-    [SerializeField] [Range(0.1f, 50f)] int poolsize = 5;
-    [SerializeField] [Range(0.1f, 30f)] float timer = 2f;
+    [SerializeField][Range(0.1f, 50f)] int poolsize = 5;
+    [SerializeField][Range(0.1f, 30f)] float timer = 2f;
 
     GameObject[] pool;
 
-    void Awake() 
+    void Awake()
     {
-        PopulatePool();    
+        PopulatePool();
     }
-    
+
     void Start()
     {
-        StartCoroutine(EnemyObjectPool());
+        // StartCoroutine(EnemyObjectPool());
     }
 
     void PopulatePool()
@@ -37,7 +37,7 @@ public class enemyObjectPool : MonoBehaviour
     {
         for (int i = 0; i < pool.Length; i++)
         {
-            if(pool[i].activeInHierarchy == false)
+            if (pool[i].activeInHierarchy == false)
             {
                 pool[i].SetActive(true);
                 return;
@@ -52,5 +52,10 @@ public class enemyObjectPool : MonoBehaviour
             EnabledPoolObjects();
             yield return new WaitForSeconds(timer);
         }
+    }
+
+    public void StartEnemies()
+    {
+        StartCoroutine(EnemyObjectPool());
     }
 }

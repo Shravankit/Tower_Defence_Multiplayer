@@ -12,6 +12,6 @@ EditorBuildSettings:
     path: Assets/Scenes/Realm Rush l2.unity
     guid: 2589c4c184644e248b9ee725cae3cd17
   - enabled: 1
-    path: Assets/Scenes/multiplayer/Realm Rush l2 1.unity
+    path: Assets/Scenes/multiplayer/Realm Rush Multiplayer.unity
     guid: a7dbe0b5db1393d4ebf19d89d9f942d3
   m_configObjects: {}
