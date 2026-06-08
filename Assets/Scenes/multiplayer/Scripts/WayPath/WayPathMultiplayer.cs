@@ -23,6 +23,13 @@ public class WayPathMultiplayer : MonoBehaviour
         }
     }
 
+    bool canStartPlacing = false;
+    public bool CanStartPlacing
+    {
+        get => canStartPlacing;
+        set => canStartPlacing = value;
+    }
+
     /// <summary>
     /// Awake is called when the script instance is being loaded.
     /// </summary>
@@ -39,9 +46,10 @@ public class WayPathMultiplayer : MonoBehaviour
 
     private void OnMouseDown()
     {
+        if (canStartPlacing == false) return;
         if (!IsPlaceable) return;
 
-        bool isTowerPlaced = towerMultiplayer.TowerInstantiate(towerMultiplayer, transform.position);
+        bool isTowerPlaced = towerMultiplayer.TowerInstantiate(towerMultiplayer, transform.position, multiplayerManager.playerName);
 
         if (isTowerPlaced)
         {

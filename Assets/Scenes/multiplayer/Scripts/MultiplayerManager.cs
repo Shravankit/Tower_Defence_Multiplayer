@@ -12,8 +12,18 @@ public class MultiplayerManager : MonoBehaviour
     public GameObject towerGameObject;
     GameObject player;
     public GameObject joinCanvas;
+    public GameObject namePannel;
+    public GameObject startPannel;
 
     public enemyObjectPool enemyObjectPool;
+
+    public string playerName;
+
+    public TMP_InputField nameInputField;
+
+    public List<string> playersJoined = new List<string>();
+
+    public Dictionary<string, GameObject> players = new Dictionary<string, GameObject>();
 
     public Dictionary<string, WayPathMultiplayer> tiles = new Dictionary<string, WayPathMultiplayer>();
 
@@ -24,7 +34,7 @@ public class MultiplayerManager : MonoBehaviour
         webSocket.OnOpen += () =>
         {
             Debug.Log("connected");
-            SpawnMyPlayer();
+            // SpawnMyPlayer();
         };
 
         webSocket.OnClose += (e) =>
@@ -41,10 +51,39 @@ public class MultiplayerManager : MonoBehaviour
         {
             string json = Encoding.UTF8.GetString(bytes);
 
+            if (json.Contains("\"type\":\"joined\""))
+            {
+                PlayerStats res = JsonUtility.FromJson<PlayerStats>(json);
+
+                SpawnMyPlayer();
+
+                namePannel.SetActive(false);
+                startPannel.SetActive(true);
+            }
+
+            if (json.Contains("\"type\":\"playerJoined\""))
+            {
+                PlayerStats stats = JsonUtility.FromJson<PlayerStats>(json);
+
+                Debug.Log(stats.name + " has joined Room");
+            }
+
             if (json.Contains("\"type\":\"enemy\""))
             {
                 enemyObjectPool.StartEnemies();
                 joinCanvas.SetActive(false);
+
+                EnableTowerPlacement();
+            }
+
+            if (json.Contains("\"type\":\"players\""))
+            {
+                PlayersList players = JsonUtility.FromJson<PlayersList>(json);
+
+                playersJoined.Clear();
+
+                foreach (string p in players.players)
+                    playersJoined.Add(p);
             }
 
             if (json.Contains("\"type\":\"tower\""))
@@ -65,12 +104,33 @@ public class MultiplayerManager : MonoBehaviour
         await webSocket.Connect();
     }
 
+    public void Join()
+    {
+        playerName = nameInputField.text;
+
+        if (string.IsNullOrEmpty(nameInputField.text))
+        {
+            Debug.LogError("Input field is empty");
+            return;
+        }
+
+        PlayerStats playerStats = new PlayerStats
+        {
+            type = "join",
+            name = playerName,
+        };
+
+        string json = JsonUtility.ToJson(playerStats);
+
+        webSocket.SendText(json);
+    }
+
     public void SendTowerPlacement(string towerType, Vector3 pos)
     {
         TowerDetails td = new TowerDetails
         {
             type = "tower",
-            playerName = player.name,
+            playerName = playerName,
             x = pos.x,
             y = pos.y,
             z = pos.z,
@@ -97,13 +157,15 @@ public class MultiplayerManager : MonoBehaviour
         enemyObjectPool.StartEnemies();
         joinCanvas.SetActive(false);
 
+        EnableTowerPlacement();
+
         EnemyPoolStats enemyPool = new EnemyPoolStats
         {
             type = "enemy",
         };
 
-        string json = JsonUtility.ToJson(enemyPool);
-        webSocket.SendText(json);
+        string json = JsonUtility.ToJson(obj: enemyPool);
+        webSocket.SendText(message: json);
     }
 
     void SpawnRemoteTower(TowerDetails td)
@@ -127,7 +189,8 @@ public class MultiplayerManager : MonoBehaviour
             Quaternion.identity
         );
 
-        player.name = "MyPlayer";
+        // player.name = "MyPlayer";
+        player.name = playerName;
     }
 
     void Update()
@@ -135,6 +198,14 @@ public class MultiplayerManager : MonoBehaviour
 #if !UNITY_WEBGL || !UNITY_EDITOR
         webSocket.DispatchMessageQueue();
 #endif
+    }
+
+    public void EnableTowerPlacement()
+    {
+        foreach (WayPathMultiplayer tile in tiles.Values)
+        {
+            tile.CanStartPlacing = true;
+        }
     }
 
     async void OnApplicationQuit()
@@ -167,5 +238,10 @@ public class MultiplayerManager : MonoBehaviour
     public class EnemyPoolStats
     {
         public string type;
+    }
+
+    public class PlayersList
+    {
+        public string[] players;
     }
 }
