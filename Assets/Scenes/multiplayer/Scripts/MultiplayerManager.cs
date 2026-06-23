@@ -6,6 +6,10 @@ using TMPro;
 
 public class MultiplayerManager : MonoBehaviour
 {
+    //discovery reference
+    [SerializeField] ServerDiscovery serverDiscovery;
+
+    //websocket
     WebSocket webSocket;
     public string url = "ws://localhost:8080";
     public GameObject playerPrefab;
@@ -21,6 +25,10 @@ public class MultiplayerManager : MonoBehaviour
 
     public TMP_InputField nameInputField;
 
+    //chat input
+    [Header("Chat Input Field")]
+    [SerializeField] private TMP_InputField chatInputField;
+
     public List<string> playersJoined = new List<string>();
 
     public Dictionary<string, GameObject> players = new Dictionary<string, GameObject>();
@@ -29,7 +37,13 @@ public class MultiplayerManager : MonoBehaviour
 
     async private void Start()
     {
+        string serverIp = await serverDiscovery.FindServer();
+
+        url = $"ws://{serverIp}:8080";
+
         webSocket = new WebSocket(url);
+
+        Debug.Log(url);
 
         webSocket.OnOpen += () =>
         {
@@ -51,6 +65,8 @@ public class MultiplayerManager : MonoBehaviour
         {
             string json = Encoding.UTF8.GetString(bytes);
 
+            Debug.Log(json);
+
             if (json.Contains("\"type\":\"joined\""))
             {
                 PlayerStats res = JsonUtility.FromJson<PlayerStats>(json);
@@ -59,6 +75,8 @@ public class MultiplayerManager : MonoBehaviour
 
                 namePannel.SetActive(false);
                 startPannel.SetActive(true);
+
+                Debug.Log(json);
             }
 
             if (json.Contains("\"type\":\"playerJoined\""))
@@ -98,6 +116,13 @@ public class MultiplayerManager : MonoBehaviour
 
                 if (tiles.TryGetValue(tile.id, out var w))
                     w.IsPlaceable = tile.isPlaced;
+            }
+
+            if (json.Contains("\"type\":\"chat\""))
+            {
+                ChatSystem chat = JsonUtility.FromJson<ChatSystem>(json);
+                Debug.Log(chat.playerName + ": " + chat.chatMsg);
+                OnMessageReceived(chat.playerName + ": " + chat.chatMsg);
             }
         };
 
@@ -168,6 +193,20 @@ public class MultiplayerManager : MonoBehaviour
         webSocket.SendText(message: json);
     }
 
+    public void SendChatMessage()
+    {
+        string message = chatInputField.text;
+        ChatSystem chat = new ChatSystem
+        {
+            type = "chat",
+            playerName = playerName,
+            chatMsg = message
+        };
+
+        string json = JsonUtility.ToJson(chat);
+        webSocket.SendText(json);
+    }
+
     void SpawnRemoteTower(TowerDetails td)
     {
         Vector3 pos = new Vector3(td.x, td.y, td.z);
@@ -193,12 +232,32 @@ public class MultiplayerManager : MonoBehaviour
         player.name = playerName;
     }
 
+    void OnMessageReceived(string message)
+    {
+        Debug.Log("OnMessageReceived: " + message);
+    }
+
+    //     void Update()
+    //     {
+    // #if !UNITY_WEBGL || !UNITY_EDITOR
+    //         webSocket.DispatchMessageQueue();
+    // #endif
+    //     }
+
     void Update()
     {
-#if !UNITY_WEBGL || !UNITY_EDITOR
+        if (webSocket == null) return;
+
+#if !UNITY_WEBGL || UNITY_EDITOR
         webSocket.DispatchMessageQueue();
 #endif
     }
+
+    // async void OnApplicationQuit()
+    // {
+    //     if (webSocket == null) return;
+    //     await webSocket.Close();
+    // }
 
     public void EnableTowerPlacement()
     {
@@ -243,5 +302,12 @@ public class MultiplayerManager : MonoBehaviour
     public class PlayersList
     {
         public string[] players;
+    }
+
+    public class ChatSystem
+    {
+        public string type;
+        public string playerName;
+        public string chatMsg;
     }
 }
