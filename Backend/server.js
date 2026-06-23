@@ -1,5 +1,7 @@
 const ws = require("ws");
 
+const startDiscovery = require("./Discovery/discovery.js");
+
 const wss = new ws.Server({ port: 8080 });
 
 console.log("WebSocket Server Running on ws://localhost:8080");
@@ -11,6 +13,7 @@ wss.on("connection", (ws) => {
   console.log("Player connected");
 
   ws.playerName = "";
+  ws.isPlayer = false;
 
   players.push(ws);
 
@@ -21,6 +24,7 @@ wss.on("connection", (ws) => {
 
     if (data.type === "join") {
       ws.playerName = data.name;
+      ws.isPlayer = true;
 
       console.log(`${ws.playerName} had joined room`);
 
@@ -57,11 +61,22 @@ wss.on("connection", (ws) => {
       return;
     }
 
+    //broadcastng message
     players.forEach((player) => {
-      if (player !== ws && player.readyState === ws.OPEN) {
+      if (player !== ws && player.isPlayer && player.readyState === ws.OPEN) {
         player.send(msg);
+        console.log(`[${data.type}] sent to ${player.playerName}`);
       }
     });
+
+    // if (data.type === "chat") {
+    //   players.forEach((player) => {
+    //     if (player !== ws && player.readyState === ws.OPEN) {
+    //       player.send(msg);
+    //       console.log(`Message sent to ${player.playerName}`);
+    //     }
+    //   });
+    // }
   });
 
   ws.on("close", () => {
@@ -70,3 +85,5 @@ wss.on("connection", (ws) => {
     playerNames.delete(ws.playerName);
   });
 });
+
+startDiscovery();
