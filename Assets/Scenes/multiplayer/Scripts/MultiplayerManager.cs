@@ -3,6 +3,7 @@ using NativeWebSocket;
 using System.Text;
 using System.Collections.Generic;
 using TMPro;
+using Microsoft.Unity.VisualStudio.Editor;
 
 public class MultiplayerManager : MonoBehaviour
 {
@@ -28,6 +29,7 @@ public class MultiplayerManager : MonoBehaviour
     //chat input
     [Header("Chat Input Field")]
     [SerializeField] private TMP_InputField chatInputField;
+    [SerializeField] private TMP_Text chatDisplayText;
 
     public List<string> playersJoined = new List<string>();
 
@@ -35,8 +37,26 @@ public class MultiplayerManager : MonoBehaviour
 
     public Dictionary<string, WayPathMultiplayer> tiles = new Dictionary<string, WayPathMultiplayer>();
 
+    //> Connection Interval
+    float networkIntervel = 5f;
+    float networkTimeout = 15f;
+
+    float lastMessageSent;
+    float lastMessageRecivedTime;
+
+    bool isConnected;
+
+    Queue<GameObject> towerPool = new Queue<GameObject>();
+    int poolSize = 20;
+
+    //> Out going message batching
+    List<string> outGoingQueue = new List<string>();
+
+
     async private void Start()
     {
+        PoolTowers();
+
         string serverIp = await serverDiscovery.FindServer();
 
         url = $"ws://{serverIp}:8080";
@@ -61,72 +81,19 @@ public class MultiplayerManager : MonoBehaviour
             Debug.Log("Error: " + e);
         };
 
-        webSocket.OnMessage += (bytes) =>
-        {
-            string json = Encoding.UTF8.GetString(bytes);
-
-            Debug.Log(json);
-
-            if (json.Contains("\"type\":\"joined\""))
-            {
-                PlayerStats res = JsonUtility.FromJson<PlayerStats>(json);
-
-                SpawnMyPlayer();
-
-                namePannel.SetActive(false);
-                startPannel.SetActive(true);
-
-                Debug.Log(json);
-            }
-
-            if (json.Contains("\"type\":\"playerJoined\""))
-            {
-                PlayerStats stats = JsonUtility.FromJson<PlayerStats>(json);
-
-                Debug.Log(stats.name + " has joined Room");
-            }
-
-            if (json.Contains("\"type\":\"enemy\""))
-            {
-                enemyObjectPool.StartEnemies();
-                joinCanvas.SetActive(false);
-
-                EnableTowerPlacement();
-            }
-
-            if (json.Contains("\"type\":\"players\""))
-            {
-                PlayersList players = JsonUtility.FromJson<PlayersList>(json);
-
-                playersJoined.Clear();
-
-                foreach (string p in players.players)
-                    playersJoined.Add(p);
-            }
-
-            if (json.Contains("\"type\":\"tower\""))
-            {
-                TowerDetails td = JsonUtility.FromJson<TowerDetails>(json);
-                Instantiate(towerGameObject, new Vector3(td.x, td.y, td.z), Quaternion.identity);
-            }
-
-            if (json.Contains("\"type\":\"tile\""))
-            {
-                TileDetails tile = JsonUtility.FromJson<TileDetails>(json);
-
-                if (tiles.TryGetValue(tile.id, out var w))
-                    w.IsPlaceable = tile.isPlaced;
-            }
-
-            if (json.Contains("\"type\":\"chat\""))
-            {
-                ChatSystem chat = JsonUtility.FromJson<ChatSystem>(json);
-                Debug.Log(chat.playerName + ": " + chat.chatMsg);
-                OnMessageReceived(chat.playerName + ": " + chat.chatMsg);
-            }
-        };
+        webSocket.OnMessage += HandleMessages;
 
         await webSocket.Connect();
+    }
+
+    void PoolTowers()
+    {
+        for (int i = 0; i < poolSize; i++)
+        {
+            var t = Instantiate(towerGameObject);
+            t.SetActive(false);
+            towerPool.Enqueue(t);
+        }
     }
 
     public void Join()
@@ -148,6 +115,57 @@ public class MultiplayerManager : MonoBehaviour
         string json = JsonUtility.ToJson(playerStats);
 
         webSocket.SendText(json);
+    }
+
+    void HandleMessages(byte[] messages)
+    {
+        lastMessageRecivedTime = Time.time;
+        string json = Encoding.UTF8.GetString(messages);
+
+        Packet packet = JsonUtility.FromJson<Packet>(json);
+
+        switch (packet.type)
+        {
+            case "joined":
+                PlayerStats res = JsonUtility.FromJson<PlayerStats>(json);
+
+                SpawnMyPlayer();
+
+                namePannel.SetActive(false);
+                startPannel.SetActive(true);
+                break;
+            case "playerJoined":
+                PlayerStats stats = JsonUtility.FromJson<PlayerStats>(json);
+                break;
+            case "enemy":
+                enemyObjectPool.StartEnemies();
+                joinCanvas.SetActive(false);
+
+                EnableTowerPlacement();
+                break;
+            case "players":
+                PlayersList players = JsonUtility.FromJson<PlayersList>(json);
+
+                playersJoined.Clear();
+
+                foreach (string p in players.players)
+                    playersJoined.Add(p);
+                break;
+            case "tower":
+                TowerDetails td = JsonUtility.FromJson<TowerDetails>(json);
+                Instantiate(towerGameObject, new Vector3(td.x, td.y, td.z), Quaternion.identity);
+                break;
+            case "tile":
+                TileDetails tile = JsonUtility.FromJson<TileDetails>(json);
+
+                if (tiles.TryGetValue(tile.id, out var w))
+                    w.IsPlaceable = tile.isPlaced;
+                break;
+            case "chat":
+                ChatSystem chat = JsonUtility.FromJson<ChatSystem>(json);
+                OnMessageReceived(chat.playerName + ": " + chat.chatMsg);
+                break;
+        }
     }
 
     public void SendTowerPlacement(string towerType, Vector3 pos)
@@ -205,6 +223,8 @@ public class MultiplayerManager : MonoBehaviour
 
         string json = JsonUtility.ToJson(chat);
         webSocket.SendText(json);
+        chatDisplayText.text += playerName + ": " + message + "\n";
+        chatInputField.text = "";
     }
 
     void SpawnRemoteTower(TowerDetails td)
@@ -216,15 +236,9 @@ public class MultiplayerManager : MonoBehaviour
 
     void SpawnMyPlayer()
     {
-        Vector3 spawnPos = new Vector3(
-            Random.Range(-5f, 5f),
-            0f,
-            Random.Range(-5f, 5f)
-        );
-
         player = Instantiate(
             playerPrefab,
-            spawnPos,
+            Vector3.zero,
             Quaternion.identity
         );
 
@@ -235,14 +249,8 @@ public class MultiplayerManager : MonoBehaviour
     void OnMessageReceived(string message)
     {
         Debug.Log("OnMessageReceived: " + message);
+        chatDisplayText.text += message + "\n";
     }
-
-    //     void Update()
-    //     {
-    // #if !UNITY_WEBGL || !UNITY_EDITOR
-    //         webSocket.DispatchMessageQueue();
-    // #endif
-    //     }
 
     void Update()
     {
@@ -252,12 +260,6 @@ public class MultiplayerManager : MonoBehaviour
         webSocket.DispatchMessageQueue();
 #endif
     }
-
-    // async void OnApplicationQuit()
-    // {
-    //     if (webSocket == null) return;
-    //     await webSocket.Close();
-    // }
 
     public void EnableTowerPlacement()
     {
@@ -270,6 +272,11 @@ public class MultiplayerManager : MonoBehaviour
     async void OnApplicationQuit()
     {
         await webSocket.Close();
+    }
+
+    public class Packet
+    {
+        public string type;
     }
 
     public class TowerDetails
@@ -292,6 +299,7 @@ public class MultiplayerManager : MonoBehaviour
     {
         public string type;
         public string name;
+        public PlayerColor playerSelectedColor;
     }
 
     public class EnemyPoolStats
@@ -309,5 +317,14 @@ public class MultiplayerManager : MonoBehaviour
         public string type;
         public string playerName;
         public string chatMsg;
+    }
+
+    public enum PlayerColor
+    {
+        Red,
+        Orange,
+        Yellow,
+        Green
+
     }
 }
